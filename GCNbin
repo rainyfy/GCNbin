@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+
+"""GCNbin.py: Binning Metagenomic Contigs via GCN and autoencoder."""
+
+import argparse
+import os
+import sys
+import subprocess
+
+__author__ = "Fu liu ,Fangyu yu and Yun liu"
+__version__ = "1.0"
+__maintainer__ = "Fangyu Yu"
+__email__ = "wbsbio@163.com"
+
+
+parser = argparse.ArgumentParser(description="""GCNbin is a multi-view and deep learning-based metagenomic contigs binning tool, GCNbin performs synchronous feature learning for compositional values and structural graphs by autoencoder and graph convolutional network respectively, and uses a dual self-supervised module to unify the results of the two neural networks and to guide the binning task.""")
+
+parser.add_argument("--assembler",
+                    required=True,
+                    type=str,
+                    help="name of the assembler used. (Supports SPAdes, MEGAHIT)")
+
+parser.add_argument("--graph",
+                    required=True,
+                    type=str,
+                    help="path to the assembly graph file")
+
+parser.add_argument("--contigs",
+                    required=True,
+                    type=str,
+                    help="path to the contigs file")
+                    
+parser.add_argument("--bam",
+                    required=True,
+                    type=str,
+                    help="path to the bam file")
+parser.add_argument("--output",
+                    required=True,
+                    type=str,
+                    help="path to the output folder")
+                    
+parser.add_argument("--abundance",
+                    required=False,
+                    type=str,
+                    help="path to the abundance file")
+parser.add_argument("--paths",
+                    required=False,
+                    type=str,
+                    help="path to the contigs.paths file, only in Spades")
+parser.add_argument("--K",
+                    required=False,
+                    type=str,
+                    default= 0,
+                    help="cluster number [default: auto]")
+                    
+
+parser.add_argument("--prefix",
+                    required=False,
+                    type=str,
+                    default='meta',
+                    help="prefix for the output file")
+
+parser.add_argument("--min_length",
+                    required=False,
+                    type=int,
+                    default=300,
+                    help="minimum length of contigs to consider for binning [default: 300]")
+
+parser.add_argument("--topk",
+                    required=False,
+                    type=int,
+                    default=1,
+                    help="number of K in KNN graph. [default: 1]")
+
+parser.add_argument("--lambda",
+                    required=False,
+                    type=float,
+                    default=0,
+                    help="parameter controling the discards of low-confidence contigs [default: 0]")
+
+parser.add_argument("--learn_rate",
+                    required=False,
+                    type=float,
+                    help="learn rate of model [default: 1e-3]")
+parser.add_argument("--h1",
+                    required=False,
+                    type=int,
+                    default=100,
+                    help="parameter of neural network[default: 100]")
+
+parser.add_argument("--h2",
+                    required=False,
+                    type=int,
+                    default=70,
+                    help="parameter of neural network[default: 70]")
+
+parser.add_argument("--z",
+                    required=False,
+                    type=int,
+                    default=50,
+                    help="parameter of neural network [default: 50]")
+
+
+parser.add_argument("--nthreads",
+                    required=False,
+                    type=int,
+                    default=8,
+                    help="number of threads to use [default: 8]")
+
+parser.add_argument('-v', '--version', action='version',
+                    version='%(prog)s ' + __version__)
+
+args = vars(parser.parse_args())
+
+assembler = args["assembler"]
+contigs_file = args["contigs"]
+graph_file = args["graph"]
+contig_paths = args["paths"]
+abundance_file = args["abundance"]
+bam_file = args["bam"]
+output_path = args["output"]
+prefix = args["prefix"]
+topk = args["topk"]
+cluster_K = args["K"]
+lr= args["learn_rate"]
+n_h1 = args["h1"]
+n_h2 = args["h2"]
+n_z = args["z"]
+nthreads = args["nthreads"]
+min_length = args["min_length"]
+learn_rate = args["learn_rate"]
+h1 = args["h1"]
+h2 = args["h2"]
+z = args["z"]
+lam = args["lambda"]
+# Validation of inputs
+# ---------------------------------------------------
+
+# Check assembler name
+assemblers = ["spades", "megahit"]
+if assembler.lower() not in assemblers:
+    print("\nPlease make sure to provide the correct assembler type.")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Check assembly graph file
+if not os.path.isfile(graph_file):
+    print("\nFailed to open the assembly graph file.")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Check contigs file
+if not os.path.isfile(contigs_file):
+    print("\nFailed to open the contigs file.")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Check if paths file is provided when the assembler type is SPAdes
+if assembler.lower() == "spades" and contig_paths is None:
+    print("\nPlease make sure to provide the path to the contigs.paths file.")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Check contigs.paths file for SPAdes
+if assembler.lower() == "spades" and not os.path.isfile(contig_paths):
+    print("\nFailed to open the contigs.paths file.")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Handle for missing trailing forwardslash in output folder path
+if output_path[-1:] != "/":
+    output_path = output_path + "/"
+
+# Create output folder if it does not exist
+if not os.path.isdir(output_path):
+    subprocess.run("mkdir -p "+output_path, shell=True)
+
+# Validate prefix
+if args["prefix"] != '':
+    if args["prefix"].endswith("_"):
+        prefix = args["prefix"]
+    else:
+        prefix = args["prefix"]+"_"
+else:
+    prefix = ''
+
+# Validate min_length
+if min_length <= 0:
+    print("\nPlease enter a valid number for min_length")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Validate K
+if cluster_K < 0 or topk < 0:
+    print("\nPlease enter a valid number for K and topk")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+# Validate K
+if lr != None:
+    lr_2 = int(lr)
+    if lr_2 <= 0 or lr_2 > 1:
+       print("\nPlease enter a valid number for learn_rate")
+       print("Exiting GCNbin...\nBye...!\n")
+       sys.exit(1)
+else:
+    lr = 1e-3    
+# Validate number of threads
+if nthreads <= 0:
+    print("\nPlease enter a valid number for the number of threads")
+    print("Exiting GCNbin...\nBye...!\n")
+    sys.exit(1)
+
+
+# Run GCNbin
+# ---------------------------------------------------
+
+cmdGCNbin = """python "{0}/src/GCNbin_main.py" --assembler "{1}" --graph "{2}" --contigs "{3}" --paths "{4}" --abundance "{5}" --output "{6}" --prefix "{7}" --min_length "{8}" --bam "{9}" --K "{10}" --topk "{11}" --h1 "{12}" --h2 "{13}" --z "{14}" --nthreads "{15}" --learn_rate "{16}" --lambda "{17}"
+ """.format(
+    os.path.dirname(__file__),
+    assembler.lower(),
+    graph_file,
+    contigs_file,
+    contig_paths,
+    abundance_file,
+    output_path,
+    prefix,
+    min_length,
+    bam_file,
+    cluster_K,
+    topk,
+    h1,
+    h2,
+    z,
+    nthreads,
+    lr,
+    lam,)
+
+
+os.system(cmdGCNbin)
