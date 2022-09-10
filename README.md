@@ -1,0 +1,2 @@
+# GCNbin
+Metagenome binning tool
