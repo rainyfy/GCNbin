@@ -1,6 +1,6 @@
 # GCNbin
 
-GCNbin is a multi-view and deep learning-based metagenomic contigs binning tool, GCNbin performs synchronous feature learning for compositional values and structural graphs by autoencoder and graph convolutional network respectively, and uses a dual self-supervised module to unify the results of the two neural networks and to guide the binning task. GCNbin is tested on contigs obtained from next-generation sequencing (NGS) data. Currently, GCNbin supports contigs assembled using metaSPAdes and MEGAHIT.
+GCNbin is a multi-view and deep learning-based metagenomic contigs binning tool, GCNbin performs synchronous feature learning for compositional values and structural graphs by autoencoder and graph convolutional network respectively, and uses a dual self-supervised module to unify the results of the two neural networks and to guide the binning task. GCNbin is tested on contigs obtained from next-generation sequencing (NGS) data. Currently, GCNbin supports contigs assembled using metaSPAdes and MEGAHIT. You can contact us via liuyun313@jlu.edu.cn.
 
 ## Dependencies
 - scipy - version 1.3.1
